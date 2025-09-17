@@ -44,7 +44,7 @@ app.post("/inventory-update", async (req, res) => {
 
       if (metafieldsData.metafields && metafieldsData.metafields.length > 0) {
         for (let mf of metafieldsData.metafields) {
-          if (mf.namespace === "custom" && mf.key === "your_metafield_key") {
+          if (mf.namespace === "custom" && mf.key === "coming_soon_badge") {
             // ❌ Delete metafield
             await fetch(
               `https://${SHOPIFY_STORE}/admin/api/2024-07/metafields/${mf.id}.json`,
@@ -78,4 +78,5 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
