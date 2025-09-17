@@ -1,99 +1,81 @@
 // server.js
-const express = require('express');
-const fetch = require('node-fetch');
+const express = require("express");
+const fetch = require("node-fetch");
+const bodyParser = require("body-parser");
+
 const app = express();
-app.use(express.json());
+app.use(bodyParser.json());
 
-// -------------- FILL THESE 2 FIELDS --------------
-const SHOP = "organic-luxury-shop.myshopify.com"; 
-const ACCESS_TOKEN = "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"; // Shopify Admin API token
-const API_VERSION = "2024-07"; // Shopify API Version
-// ---------------------------------------------------
+// 🔑 Shopify credentials
+const SHOPIFY_STORE = "organic-luxury-shop.myshopify.com"; // yaha apna store likho
+const ADMIN_API_ACCESS_TOKEN = "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"; // Shopify admin API token
 
-// Your webhook path
-app.post('/', async (req, res) => {
+// ✅ Webhook endpoint
+app.post("/inventory-update", async (req, res) => {
   try {
-    const data = req.body;
-    if (!data || !data.variants || data.variants.length === 0) {
-      console.error('Payload missing data.');
-      return res.status(400).send('Bad Request');
+    console.log("Webhook received:", req.body);
+
+    const product = req.body;
+    const variant = product.variants ? product.variants[0] : null;
+
+    if (!variant) {
+      console.log("No variant data found");
+      return res.sendStatus(200);
     }
 
-    const productId = data.id;
-    const newQuantity = data.variants[0].inventory_quantity;
+    // Agar inventory 0 se zyada hai
+    if (variant.inventory_quantity > 0) {
+      console.log("Inventory available, deleting metafield...");
 
-    console.log(`Processing Product ID: ${productId} with quantity: ${newQuantity}`);
-
-    // Agar inventory 0 hai, to "Coming Soon" metafield add karein
-    if (newQuantity <= 0) {
-      console.log('Quantity is 0. Creating "coming_soon" metafield...');
-      
-      const payload = {
-        metafield: {
-          namespace: "custom",
-          key: "coming_soon_badge",
-          value: "true",
-          type: "string"
-        }
-      };
-
-      await fetch(`https://${SHOP}/admin/api/${API_VERSION}/products/${productId}/metafields.json`, {
-        method: 'POST',
-        headers: {
-          'X-Shopify-Access-Token': ACCESS_TOKEN,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-      console.log(`✅ "coming_soon" metafield added.`);
-      
-    } else {
-      // Agar inventory 0 se zyada hai, to metafield ko hatayein
-      console.log('Quantity is > 0. Removing "coming_soon" metafield...');
-      
-      const metafieldsRes = await fetch(`https://${SHOP}/admin/api/${API_VERSION}/products/${productId}/metafields.json`, {
-        headers: {
-          'X-Shopify-Access-Token': ACCESS_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!metafieldsRes.ok) {
-        console.error(`Failed to fetch metafields. Status: ${metafieldsRes.status}`);
-        return res.status(500).send('Error fetching metafields.');
-      }
-
-      const metafieldsData = await metafieldsRes.json();
-      console.log('Received Metafields:', metafieldsData);
-
-      const badgeMetafield = metafieldsData.metafields.find(m => m.key === 'coming_soon_badge' && m.namespace === 'custom');
-
-      if (badgeMetafield) {
-        const deleteRes = await fetch(`https://${SHOP}/admin/api/${API_VERSION}/products/${productId}/metafields/${badgeMetafield.id}.json`, {
-          method: 'DELETE',
+      // 🔎 Metafields fetch karo
+      const metafieldsResponse = await fetch(
+        `https://${SHOPIFY_STORE}/admin/api/2024-07/products/${product.id}/metafields.json`,
+        {
+          method: "GET",
           headers: {
-            'X-Shopify-Access-Token': ACCESS_TOKEN,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (deleteRes.ok) {
-          console.log(`✅ "coming_soon" metafield removed.`);
-        } else {
-          console.error(`❌ Failed to remove metafield. Status: ${deleteRes.status}`);
+            "X-Shopify-Access-Token": ADMIN_API_ACCESS_TOKEN,
+            "Content-Type": "application/json",
+          },
         }
-      } else {
-        console.log(`"coming_soon_badge" metafield already removed or not found.`);
+      );
+
+      const metafieldsData = await metafieldsResponse.json();
+      console.log("Metafields fetched:", metafieldsData);
+
+      if (metafieldsData.metafields && metafieldsData.metafields.length > 0) {
+        for (let mf of metafieldsData.metafields) {
+          if (mf.namespace === "custom" && mf.key === "your_metafield_key") {
+            // ❌ Delete metafield
+            await fetch(
+              `https://${SHOPIFY_STORE}/admin/api/2024-07/metafields/${mf.id}.json`,
+              {
+                method: "DELETE",
+                headers: {
+                  "X-Shopify-Access-Token": ADMIN_API_ACCESS_TOKEN,
+                  "Content-Type": "application/json",
+                },
+              }
+            );
+            console.log("Metafield deleted:", mf.id);
+          }
+        }
       }
+    } else {
+      console.log("Inventory not available, skipping metafield delete.");
     }
 
-    res.status(200).send('Webhook processed');
-
-  } catch (error) {
-    console.error('❌ Error processing webhook:', error);
-    res.status(500).send('Error');
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("Error processing webhook:", err);
+    res.sendStatus(500);
   }
+});
+
+// ✅ Root test endpoint
+app.get("/", (req, res) => {
+  res.send("Shopify Webhook App Running 🚀");
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
